@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<!-- ics-to-csv · github.com/dtiger1889-ops/ics-to-csv -->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="author" content="dtiger1889-ops">
+<title>ICS → CSV Converter</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #f5f4f0; color: #1a1a18; min-height: 100vh; padding: 2rem 1rem; }
+  h1 { font-size: 1.4rem; font-weight: 600; margin-bottom: 0.25rem; }
+  .subtitle { font-size: 0.875rem; color: #666; margin-bottom: 2rem; }
+  .card { background: #fff; border: 0.5px solid #ddd; border-radius: 12px; padding: 1.5rem; max-width: 760px; margin: 0 auto 1.5rem; }
+  .drop-zone { border: 1.5px dashed #bbb; border-radius: 8px; padding: 2.5rem 1rem; text-align: center; cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+  .drop-zone:hover, .drop-zone.drag-over { border-color: #4a7fd4; background: #f0f5ff; }
+  .drop-zone p { font-size: 0.9rem; color: #555; margin-top: 0.5rem; }
+  .drop-icon { font-size: 2rem; margin-bottom: 0.5rem; }
+  input[type="file"] { display: none; }
+  .btn { display: inline-block; padding: 0.5rem 1.25rem; border-radius: 7px; border: 0.5px solid #bbb; background: #fff; font-size: 0.875rem; cursor: pointer; font-weight: 500; transition: background 0.12s; }
+  .btn:hover { background: #f0f0ee; }
+  .btn.primary { background: #1a1a18; color: #fff; border-color: #1a1a18; }
+  .btn.primary:hover { background: #333; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-top: 1.25rem; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  label { font-size: 0.78rem; font-weight: 500; color: #555; text-transform: uppercase; letter-spacing: 0.04em; }
+  input[type="text"], input[type="date"], select { font-size: 0.875rem; border: 0.5px solid #ccc; border-radius: 6px; padding: 0.4rem 0.6rem; background: #fff; color: #1a1a18; }
+  input[type="text"] { width: 220px; }
+  input[type="date"] { width: 148px; }
+  .stats { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 1.25rem; }
+  .stat { background: #f5f4f0; border-radius: 8px; padding: 0.6rem 1rem; font-size: 0.85rem; }
+  .stat strong { display: block; font-size: 1.25rem; font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; margin-top: 1rem; }
+  th { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #e5e5e3; font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; color: #666; position: sticky; top: 0; background: #fff; }
+  td { padding: 0.45rem 0.6rem; border-bottom: 0.5px solid #eee; vertical-align: top; word-break: break-word; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  tr:hover td { background: #fafaf8; }
+  .table-wrap { max-height: 340px; overflow-y: auto; border: 0.5px solid #e5e5e3; border-radius: 8px; margin-top: 0.5rem; }
+  .actions { display: flex; gap: 10px; margin-top: 1.25rem; align-items: center; }
+  .note { font-size: 0.8rem; color: #888; }
+  #status { font-size: 0.875rem; color: #555; margin-top: 0.75rem; min-height: 1.2em; }
+  .pill { display: inline-block; font-size: 0.72rem; font-weight: 600; padding: 2px 8px; border-radius: 20px; background: #e8f0fe; color: #2a56a0; margin-left: 6px; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+
+<div style="max-width:760px; margin:0 auto;">
+  <h1>ICS → CSV Converter</h1>
+  <p class="subtitle">Runs entirely in your browser. No data is uploaded anywhere.</p>
+
+  <div class="card">
+    <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+      <div class="drop-icon">📅</div>
+      <strong>Drop your .ics file here</strong>
+      <p>or click to browse</p>
+    </div>
+    <input type="file" id="fileInput" accept=".ics">
+    <div id="status"></div>
+  </div>
+
+  <div class="card hidden" id="filterCard">
+    <strong style="font-size:0.95rem;">Filter events</strong>
+    <div class="filters">
+      <div class="field">
+        <label>Search (title / attendees)</label>
+        <input type="text" id="searchInput" placeholder="e.g. John Smith">
+      </div>
+      <div class="field">
+        <label>From</label>
+        <input type="date" id="dateFrom">
+      </div>
+      <div class="field">
+        <label>To</label>
+        <input type="date" id="dateTo">
+      </div>
+      <button class="btn" onclick="clearFilters()">Clear filters</button>
+    </div>
+
+    <div class="stats" id="statsRow"></div>
+
+    <div class="table-wrap">
+      <table id="previewTable">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Time</th>
+            <th>Title</th>
+            <th>Organizer</th>
+            <th>Attendees</th>
+            <th>Duration</th>
+            <th>Location</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+
+    <div class="actions">
+      <button class="btn primary" id="downloadBtn" onclick="downloadCSV()">Download CSV</button>
+      <span class="note" id="rowCount"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+// ics-to-csv by dtiger1889-ops — runs entirely in-browser, no data leaves your machine
+let allEvents = [];
+let filteredEvents = [];
+
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+const status = document.getElementById('status');
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('drag-over'); handleFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener('change', () => handleFile(fileInput.files[0]));
+document.getElementById('searchInput').addEventListener('input', applyFilters);
+document.getElementById('dateFrom').addEventListener('change', applyFilters);
+document.getElementById('dateTo').addEventListener('change', applyFilters);
+
+function handleFile(file) {
+  if (!file) return;
+  if (!file.name.endsWith('.ics')) { status.textContent = 'Please select a .ics file.'; return; }
+  status.textContent = 'Parsing…';
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      allEvents = parseICS(e.target.result);
+      if (allEvents.length === 0) { status.textContent = 'No VEVENT entries found in this file.'; return; }
+      status.textContent = `Loaded ${allEvents.length} event${allEvents.length !== 1 ? 's' : ''} from "${file.name}"`;
+      document.getElementById('filterCard').classList.remove('hidden');
+      applyFilters();
+    } catch(err) {
+      status.textContent = 'Error parsing file: ' + err.message;
+    }
+  };
+  reader.readAsText(file);
+}
+
+// dtiger1889-ops/ics-to-csv — RFC 5545 parser
+function parseICS(text) {
+  const lines = unfoldLines(text);
+  const events = [];
+  let current = null;
+  for (const line of lines) {
+    if (line === 'BEGIN:VEVENT') { current = {}; continue; }
+    if (line === 'END:VEVENT') { if (current) events.push(finalizeEvent(current)); current = null; continue; }
+    if (!current) continue;
+    const colon = line.indexOf(':');
+    if (colon === -1) continue;
+    const key = line.substring(0, colon).toUpperCase();
+    const val = line.substring(colon + 1).trim();
+    const baseKey = key.split(';')[0];
+    if (baseKey === 'DTSTART' || baseKey === 'DTEND') {
+      current[baseKey] = val;
+    } else if (baseKey === 'SUMMARY') {
+      current['SUMMARY'] = unescapeICS(val);
+    } else if (baseKey === 'LOCATION') {
+      current['LOCATION'] = unescapeICS(val);
+    } else if (baseKey === 'ORGANIZER') {
+      current['ORGANIZER'] = extractEmail(val);
+    } else if (baseKey === 'ATTENDEE') {
+      if (!current['ATTENDEES']) current['ATTENDEES'] = [];
+      current['ATTENDEES'].push(extractAttendee(key, val));
+    } else if (baseKey === 'DESCRIPTION') {
+      current['DESCRIPTION'] = unescapeICS(val);
+    } else if (baseKey === 'UID') {
+      current['UID'] = val;
+    }
+  }
+  return events;
+}
+
+function unfoldLines(text) {
+  return text.replace(/\r\n[ \t]/g, '').replace(/\r\n/g, '\n').replace(/\n[ \t]/g, '').split('\n').map(l => l.trim()).filter(Boolean);
+}
+
+function unescapeICS(s) {
+  return s.replace(/\\n/g, ' ').replace(/\\,/g, ',').replace(/\\;/g, ';').replace(/\\\\/g, '\\');
+}
+
+function extractEmail(val) {
+  const m = val.match(/mailto:([^\s;:]+)/i);
+  if (m) return m[1];
+  const cn = val.match(/CN=([^;:]+)/i);
+  return cn ? cn[1].replace(/"/g,'') : val;
+}
+
+function extractAttendee(key, val) {
+  const email = extractEmail(val);
+  const cn = key.match(/CN=([^;]+)/i);
+  const name = cn ? cn[1].replace(/"/g,'').trim() : '';
+  return name && name.toLowerCase() !== email.toLowerCase() ? `${name} <${email}>` : email;
+}
+
+function finalizeEvent(ev) {
+  const start = parseDate(ev['DTSTART'] || '');
+  const end = parseDate(ev['DTEND'] || '');
+  const duration = start && end ? calcDuration(start, end) : '';
+  return {
+    uid: ev['UID'] || '',
+    summary: ev['SUMMARY'] || '(no title)',
+    start,
+    end,
+    date: start ? formatDate(start) : '',
+    time: start ? formatTime(start) : '',
+    duration,
+    organizer: ev['ORGANIZER'] || '',
+    attendees: (ev['ATTENDEES'] || []).join('; '),
+    location: ev['LOCATION'] || '',
+    description: (ev['DESCRIPTION'] || '').substring(0, 200)
+  };
+}
+
+function parseDate(s) {
+  if (!s) return null;
+  s = s.replace(/^[^:]+:/, '').split('Z')[0].split('/').pop();
+  if (s.length >= 15) {
+    const y = s.substr(0,4), mo = s.substr(4,2), d = s.substr(6,2);
+    const h = s.substr(9,2)||'00', mi = s.substr(11,2)||'00';
+    return new Date(`${y}-${mo}-${d}T${h}:${mi}:00`);
+  } else if (s.length >= 8) {
+    return new Date(`${s.substr(0,4)}-${s.substr(4,2)}-${s.substr(6,2)}T00:00:00`);
+  }
+  return null;
+}
+
+function formatDate(d) {
+  if (!d) return '';
+  return d.toLocaleDateString('en-US', {year:'numeric', month:'2-digit', day:'2-digit'});
+}
+
+function formatTime(d) {
+  if (!d) return '';
+  const h = d.getHours(), m = d.getMinutes();
+  if (h === 0 && m === 0) return '';
+  return d.toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit', hour12:true});
+}
+
+function calcDuration(start, end) {
+  const diff = Math.round((end - start) / 60000);
+  if (diff <= 0) return '';
+  if (diff < 60) return `${diff}m`;
+  const h = Math.floor(diff/60), m = diff % 60;
+  return m ? `${h}h ${m}m` : `${h}h`;
+}
+
+// dtiger1889-ops — filter + render
+function applyFilters() {
+  const search = document.getElementById('searchInput').value.toLowerCase().trim();
+  const from = document.getElementById('dateFrom').value ? new Date(document.getElementById('dateFrom').value) : null;
+  const to = document.getElementById('dateTo').value ? new Date(document.getElementById('dateTo').value + 'T23:59:59') : null;
+
+  filteredEvents = allEvents.filter(ev => {
+    if (from && ev.start && ev.start < from) return false;
+    if (to && ev.start && ev.start > to) return false;
+    if (search) {
+      const hay = (ev.summary + ' ' + ev.attendees + ' ' + ev.organizer + ' ' + ev.location).toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
+    return true;
+  });
+
+  renderTable();
+  renderStats();
+}
+
+function clearFilters() {
+  document.getElementById('searchInput').value = '';
+  document.getElementById('dateFrom').value = '';
+  document.getElementById('dateTo').value = '';
+  applyFilters();
+}
+
+function renderTable() {
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = '';
+  const show = filteredEvents.slice(0, 200);
+  show.forEach(ev => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${esc(ev.date)}</td>
+      <td>${esc(ev.time)}</td>
+      <td title="${esc(ev.summary)}">${esc(ev.summary)}</td>
+      <td title="${esc(ev.organizer)}">${esc(ev.organizer)}</td>
+      <td title="${esc(ev.attendees)}">${esc(ev.attendees)}</td>
+      <td>${esc(ev.duration)}</td>
+      <td title="${esc(ev.location)}">${esc(ev.location)}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+  const rc = document.getElementById('rowCount');
+  rc.textContent = filteredEvents.length > 200
+    ? `Showing 200 of ${filteredEvents.length} rows — CSV will include all ${filteredEvents.length}`
+    : `${filteredEvents.length} row${filteredEvents.length !== 1 ? 's' : ''}`;
+}
+
+function renderStats() {
+  const total = allEvents.length;
+  const filtered = filteredEvents.length;
+  const uniqueDays = new Set(filteredEvents.map(e => e.date).filter(Boolean)).size;
+  const sr = document.getElementById('statsRow');
+  sr.innerHTML = `
+    <div class="stat"><strong>${total}</strong>Total events</div>
+    <div class="stat"><strong>${filtered}</strong>Filtered events</div>
+    <div class="stat"><strong>${uniqueDays}</strong>Unique days</div>
+  `;
+}
+
+function esc(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// dtiger1889-ops — CSV export
+function downloadCSV() {
+  const headers = ['Date','Time','Title','Duration','Organizer','Attendees','Location','Description','UID'];
+  const rows = [headers, ...filteredEvents.map(ev => [
+    ev.date, ev.time, ev.summary, ev.duration,
+    ev.organizer, ev.attendees, ev.location, ev.description, ev.uid
+  ])];
+  const csv = rows.map(r => r.map(cell => `"${(cell||'').replace(/"/g,'""')}"`).join(',')).join('\r\n');
+  const blob = new Blob([csv], {type: 'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'calendar-export.csv'; a.click();
+  URL.revokeObjectURL(url);
+}
+</script>
+
+<footer style="max-width:760px; margin:2rem auto 0; padding-top:1rem; border-top:0.5px solid #ddd; text-align:center; font-size:0.75rem; color:#999;">
+  Built by <a href="https://github.com/dtiger1889-ops" style="color:#666; text-decoration:none;">dtiger1889-ops</a> · No data leaves your browser · <a href="https://github.com/dtiger1889-ops/ics-to-csv" style="color:#666; text-decoration:none;">Source on GitHub</a>
+</footer>
+
+</body>
+</html>
